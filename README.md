@@ -286,7 +286,7 @@ Respuesta:
 }
 ```
 
-El asistente responde saludos comunes sin llamar al modelo, busca hasta tres términos en paralelo y limita el contexto a 12 productos. No envía precios ni existencias al modelo; para precios, pide la cantidad y orienta al cliente a `/cotizar`. Las respuestas de Ollama tienen un máximo configurado de 128 tokens y un tiempo límite de 45 segundos. Si no encuentra coincidencias, no carga el catálogo completo.
+El asistente responde saludos comunes sin llamar al modelo, busca hasta tres términos en paralelo y limita el contexto a 12 productos. Si el cliente pide el catálogo, lista directamente nombres obtenidos desde la base de datos. No envía precios ni existencias al modelo; para precios, pide la cantidad y orienta al cliente a `/cotizar`. Las respuestas de Ollama tienen un máximo configurado de 128 tokens y un tiempo límite de 45 segundos. Si no encuentra coincidencias, no carga el catálogo completo.
 
 Esta ruta no guarda historial entre solicitudes HTTP. Si Ollama no responde, devuelve HTTP 503.
 

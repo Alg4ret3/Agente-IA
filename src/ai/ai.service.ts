@@ -17,11 +17,7 @@ export class AiService {
   constructor(private readonly database: DatabaseService) {}
 
   async responder(mensaje: string, historial: ConversationMessage[] = []) {
-    const textoNormalizado = mensaje
-      .toLocaleLowerCase('es')
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .trim();
+    const textoNormalizado = this.normalizarTexto(mensaje);
 
     if (
       /^(hola|buenas|buenos dias|buenas tardes|buenas noches)[!. ]*$/.test(
@@ -45,7 +41,43 @@ export class AiService {
       };
     }
 
-    const palabras = textoNormalizado.match(/[a-z0-9]+/g) ?? [];
+    if (this.pideCatalogoCompleto(textoNormalizado)) {
+      const filas = await this.database.consultarProductos('');
+      const productos = new Map<number, string>();
+      for (const fila of filas) {
+        const id = Number(fila.id);
+        const nombre = String(fila.nombre ?? '').trim();
+        if (Number.isInteger(id) && nombre && !productos.has(id)) {
+          productos.set(id, nombre);
+        }
+      }
+
+      if (productos.size === 0) {
+        return {
+          respuesta:
+            'Consulté el catálogo de LadyNail Shop y en este momento no encontré productos activos con existencias. Si buscas algo específico, dime el nombre y lo reviso.',
+          productosConsultados: 0,
+        };
+      }
+
+      const listado = [...productos.values()];
+      const maximo = 20;
+      const visibles = listado.slice(0, maximo);
+      const restantes = listado.length - visibles.length;
+      return {
+        respuesta:
+          `Sí, tengo acceso al catálogo de LadyNail Shop. Estos son los productos disponibles que encontré:\n` +
+          visibles
+            .map((nombre, index) => `${index + 1}. ${nombre}`)
+            .join('\n') +
+          (restantes > 0
+            ? `\n\nLa consulta mostró ${visibles.length} de ${listado.length} productos. Dime qué categoría o producto quieres revisar y te ayudo.`
+            : '\n\nDime cuál te interesa y te ayudo a cotizarlo.'),
+        productosConsultados: listado.length,
+      };
+    }
+
+    const palabras = textoNormalizado.match(/[a-zñ0-9]+/g) ?? [];
 
     const ignorar = new Set([
       'hola',
@@ -89,6 +121,18 @@ export class AiService {
       'vender',
       'producto',
       'productos',
+      'catalogo',
+      'lista',
+      'listar',
+      'muestrame',
+      'mostrar',
+      'ver',
+      'dame',
+      'indica',
+      'indicar',
+      'tienen',
+      'disponibles',
+      'disponible',
     ]);
 
     const terminos = [
@@ -134,6 +178,10 @@ REGLAS:
   respaldadas por el catálogo disponible en esta consulta.
 - No muestres razonamientos internos ni procesos de pensamiento.
 - Usa exclusivamente el catálogo proporcionado para mencionar nombres, marcas o categorías.
+- El catálogo de productos proviene de la base de datos de LadyNail Shop.
+- Si la búsqueda no encuentra coincidencias, aclara que no encontraste productos que coincidan
+  con esa búsqueda; no digas que la tienda no tiene catálogo ni que no tienes acceso a él.
+- Si el cliente pide el catálogo completo, responde con los productos que aparecen en los datos.
 - Este contexto no incluye precios ni existencias: no inventes ni estimes ninguno.
   Si preguntan por precios, pide la cantidad y guía a usar /cotizar.
 - Si no hay coincidencias, dilo con honestidad y pregunta por el nombre exacto.
@@ -195,5 +243,34 @@ ${JSON.stringify(catalogo)}
         'El asistente no está disponible en este momento. Inténtalo de nuevo.',
       );
     }
+  }
+
+  private pideCatalogoCompleto(textoNormalizado: string): boolean {
+    const consultaCatalogo =
+      /\b(catalogo|lista de productos|productos disponibles|que productos tienen|que productos manejan|que venden)\b/.test(
+        textoNormalizado,
+      );
+    const textoSinSolicitud = textoNormalizado.replace(
+      /\b(catalogo|lista de productos|productos disponibles|que productos tienen|que productos manejan|que venden)\b/g,
+      '',
+    );
+    const consultaEspecifica =
+      /\b(de|del|para|sobre)\s+(?!productos?\b|la tienda\b|lady\s*nail\b|completo\b)\w+|\b(busco|buscando|necesito|quiero)\s+\w+/.test(
+        textoSinSolicitud,
+      );
+    return consultaCatalogo && !consultaEspecifica;
+  }
+
+  private normalizarTexto(value: string): string {
+    return value
+      .toLocaleLowerCase('es')
+      .replace(/ñ/g, 'n\u0303')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/n/g, (letter, offset, source: string) =>
+        source[offset + 1] === '\u0303' ? 'ñ' : letter,
+      )
+      .replace(/\u0303/g, '')
+      .trim();
   }
 }
