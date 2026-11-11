@@ -4,7 +4,7 @@ import { AiModule } from './ai/ai.module.js';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { DatabaseModule } from './database/database.module.js';
-import { TelegramModule } from './telegram/telegram.module.js';
+import { WhatsAppModule } from './whatsapp/whatsapp.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -20,7 +20,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     }),
     DatabaseModule,
     AiModule,
-    TelegramModule,
+    WhatsAppModule,
   ],
   controllers: [AppController],
   providers: [AppService],

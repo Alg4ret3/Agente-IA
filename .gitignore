@@ -58,6 +58,10 @@ pids
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
-# Local Telegram conversation history
+# Local WhatsApp conversation history
+/data/whatsapp-conversations.json
+/data/whatsapp-conversations.json.tmp
+
+# Local Telegram conversation history from previous versions
 /data/telegram-conversations.json
 /data/telegram-conversations.json.tmp

@@ -1,6 +1,6 @@
 # Distri Magik Agent
 
-Backend en NestJS para consultar el catálogo de Distri Magik, preparar cotizaciones y responder consultas de clientes desde una API HTTP y un bot de Telegram. El asistente utiliza un modelo de Ollama y solo debe presentar como información comercial aquello que obtiene del catálogo de PostgreSQL.
+Backend en NestJS para consultar el catálogo de Distri Magik, preparar cotizaciones y responder consultas de clientes desde una API HTTP y WhatsApp mediante OpenWA. El asistente utiliza un modelo de Ollama y solo debe presentar como información comercial aquello que obtiene del catálogo de PostgreSQL.
 
 ## Contenido
 
@@ -10,9 +10,9 @@ Backend en NestJS para consultar el catálogo de Distri Magik, preparar cotizaci
 - [Requisitos y configuración](#requisitos-y-configuración)
 - [Instalación y ejecución](#instalación-y-ejecución)
 - [API HTTP](#api-http)
-- [Bot de Telegram](#bot-de-telegram)
+- [Canal de WhatsApp](#canal-de-whatsapp)
 - [Base de datos y cotizaciones](#base-de-datos-y-cotizaciones)
-- [Historial de Telegram](#historial-de-telegram)
+- [Historial de WhatsApp](#historial-de-whatsapp)
 - [Pruebas, formato y compilación](#pruebas-formato-y-compilación)
 - [Despliegue y operación](#despliegue-y-operación)
 - [Solución de problemas](#solución-de-problemas)
@@ -25,7 +25,7 @@ La aplicación ofrece tres operaciones HTTP:
 2. Cotizar un producto para una cantidad solicitada.
 3. Enviar una consulta comercial al asistente, que combina el mensaje con resultados del catálogo y los consulta a Ollama.
 
-También inicia un bot de Telegram cuando está configurado `TELEGRAM_BOT_TOKEN`. El bot puede buscar productos, guiar al cliente por una cotización y mantener un contexto conversacional por chat. Las cotizaciones son informativas: no confirman pedidos ni reservan inventario; requieren aprobación de un asesor.
+WhatsApp es el único canal de mensajería: OpenWA entrega los mensajes entrantes al webhook del backend y el backend envía las respuestas por la API de OpenWA. El asistente puede buscar productos, guiar al cliente por una cotización y mantener un contexto conversacional por chat. Las cotizaciones son informativas: no confirman pedidos ni reservan inventario; requieren aprobación de un asesor.
 
 ## Tecnologías
 
@@ -33,7 +33,7 @@ También inicia un bot de Telegram cuando está configurado `TELEGRAM_BOT_TOKEN`
 - NestJS 12 para la aplicación HTTP y la inyección de dependencias.
 - PostgreSQL mediante `pg`.
 - Ollama mediante su API HTTP local.
-- Telegram mediante `node-telegram-bot-api` y long polling.
+- WhatsApp mediante la API HTTP de OpenWA y webhooks firmados.
 - pnpm para instalar dependencias.
 - Vitest para pruebas y Oxlint para análisis estático.
 
@@ -42,7 +42,7 @@ También inicia un bot de Telegram cuando está configurado `TELEGRAM_BOT_TOKEN`
 ```text
 .
 ├── data/
-│   └── telegram-conversations.json   # Historial local creado en ejecución; no versionar
+│   └── whatsapp-conversations.json   # Historial local creado en ejecución; no versionar
 ├── src/
 │   ├── ai/
 │   │   ├── ai.module.ts
@@ -51,9 +51,10 @@ También inicia un bot de Telegram cuando está configurado `TELEGRAM_BOT_TOKEN`
 │   │   ├── database.module.ts
 │   │   ├── database.service.ts       # Pool PostgreSQL, catálogo y cotizaciones
 │   │   └── database.service.spec.ts
-│   ├── telegram/
-│   │   ├── telegram.module.ts
-│   │   └── telegram.service.ts       # Bot, comandos, flujos e historial
+│   ├── whatsapp/
+│   │   ├── whatsapp.controller.ts    # Webhook firmado de OpenWA
+│   │   ├── whatsapp.module.ts
+│   │   └── whatsapp.service.ts       # Mensajes, OpenWA, flujos e historial
 │   ├── app.controller.ts             # Rutas HTTP
 │   ├── app.controller.spec.ts
 │   ├── app.module.ts                 # Ensambla los módulos
@@ -74,7 +75,7 @@ También inicia un bot de Telegram cuando está configurado `TELEGRAM_BOT_TOKEN`
 AppModule
 ├── DatabaseModule  (global; ConfigModule y PostgreSQL)
 ├── AiModule        ────────────────┐
-└── TelegramModule ──┬──────────────┘
+└── WhatsAppModule ──┬──────────────┘
                      ├── AiModule
                      └── DatabaseModule
 
@@ -82,14 +83,14 @@ AppController ──> AiService
               └─> DatabaseService
 
 AiService ──────> DatabaseService ──> PostgreSQL
-TelegramService ─> AiService
+WhatsAppService ─> AiService
                 └> DatabaseService
 ```
 
 - **`DatabaseModule`** configura `ConfigModule` como global y exporta `DatabaseService`.
 - **`DatabaseService`** administra el pool de conexiones, busca productos y calcula cotizaciones. Cierra el pool al detener Nest.
-- **`AiModule` / `AiService`** construyen el contexto del catálogo y llaman a Ollama. El módulo exporta el servicio para la API y Telegram.
-- **`TelegramModule` / `TelegramService`** habilitan long polling, procesan mensajes en serie por chat y guardan el historial local.
+- **`AiModule` / `AiService`** construyen el contexto del catálogo y llaman a Ollama. El módulo exporta el servicio para la API y WhatsApp.
+- **`WhatsAppModule` / `WhatsAppService`** reciben los webhooks firmados de OpenWA, procesan mensajes en serie por chat, llaman a la API de envío y guardan el historial local.
 - **`AppController`** expone las rutas HTTP.
 - **`main.ts`** crea la aplicación y escucha en `PORT` o, si no está definido, en el puerto `3000`.
 
@@ -100,8 +101,8 @@ Se necesita:
 - Node.js 20.19 o posterior.
 - pnpm y acceso a los paquetes del lockfile.
 - Una instancia PostgreSQL con el esquema y los datos del catálogo descritos más abajo.
-- Ollama disponible en `http://localhost:11434` y el modelo `qwen3.5:4b` descargado. Ollama solo es necesario para la ruta `/chat` y las respuestas conversacionales de Telegram.
-- Un token de bot de Telegram para habilitar la integración con Telegram.
+- Ollama disponible en `http://localhost:11434` y el modelo `qwen3.5:4b` descargado. Ollama solo es necesario para la ruta `/chat` y las respuestas conversacionales de WhatsApp.
+- OpenWA disponible por HTTP, con una sesión de WhatsApp iniciada y su API key configurada.
 
 Crea un archivo `.env` en la raíz del proyecto. No se distribuye una plantilla de entorno; usa este ejemplo y reemplaza los valores según el entorno:
 
@@ -116,8 +117,17 @@ DB_NAME=systemdistrimagik
 DB_USER=agente_ia_lectura
 DB_PASSWORD=cambia_este_valor
 
-# Telegram (opcional; sin este valor el servidor HTTP puede iniciar sin el bot)
-TELEGRAM_BOT_TOKEN=
+# OpenWA / WhatsApp
+OPENWA_BASE_URL=http://localhost:2785
+OPENWA_API_KEY=
+OPENWA_SESSION_ID=
+OPENWA_WEBHOOK_SECRET=
+OPENWA_ADVISOR_PHONE=
+
+# Whisper local (servidor compatible con OpenAI; configurar por separado)
+WHISPER_API_URL=http://localhost:8000/v1/audio/transcriptions
+WHISPER_MODEL=Systran/faster-whisper-small
+WHISPER_API_KEY=
 
 # NestJS Observe (opcional)
 OBSERVE_APP_KEY=
@@ -126,17 +136,24 @@ OBSERVE_APP_SECRET=
 
 Variables y valores predeterminados que usa el código:
 
-| Variable | Obligatoria | Valor predeterminado | Uso |
-|---|---:|---|---|
-| `PORT` | No | `3000` | Puerto HTTP. |
-| `DB_HOST` | No | `localhost` | Host PostgreSQL. |
-| `DB_PORT` | No | `5432` | Puerto PostgreSQL. |
-| `DB_NAME` | No | `systemdistrimagik` | Base de datos. |
-| `DB_USER` | No | `agente_ia_lectura` | Usuario PostgreSQL. |
-| `DB_PASSWORD` | Sí para conectarse | Sin valor | Contraseña del usuario de base de datos. |
-| `TELEGRAM_BOT_TOKEN` | No | Sin valor | Si falta, Telegram no se inicia y se registra un error. |
-| `OBSERVE_APP_KEY` | No | Marcador `YOUR_APP_KEY` | Clave de NestJS Observe. |
-| `OBSERVE_APP_SECRET` | No | Marcador `YOUR_APP_SECRET` | Secreto de NestJS Observe. |
+| Variable                |                Obligatoria | Valor predeterminado                            | Uso                                                                 |
+| ----------------------- | -------------------------: | ----------------------------------------------- | ------------------------------------------------------------------- |
+| `PORT`                  |                         No | `3000`                                          | Puerto HTTP.                                                        |
+| `DB_HOST`               |                         No | `localhost`                                     | Host PostgreSQL.                                                    |
+| `DB_PORT`               |                         No | `5432`                                          | Puerto PostgreSQL.                                                  |
+| `DB_NAME`               |                         No | `systemdistrimagik`                             | Base de datos.                                                      |
+| `DB_USER`               |                         No | `agente_ia_lectura`                             | Usuario PostgreSQL.                                                 |
+| `DB_PASSWORD`           |         Sí para conectarse | Sin valor                                       | Contraseña del usuario de base de datos.                            |
+| `OPENWA_BASE_URL`       |                         No | `http://localhost:2785`                         | URL base de la API de OpenWA.                                       |
+| `OPENWA_API_KEY`        |           Sí para WhatsApp | Sin valor                                       | API key de OpenWA; se envía en el header `X-API-Key`.               |
+| `OPENWA_SESSION_ID`     |           Sí para WhatsApp | Sin valor                                       | ID de la sesión de OpenWA que recibirá y enviará mensajes.          |
+| `OPENWA_WEBHOOK_SECRET` |           Sí para WhatsApp | Sin valor                                       | Secreto compartido para verificar `X-OpenWA-Signature`.             |
+| `OPENWA_ADVISOR_PHONE`  | Sí para avisos de llamadas | Sin valor                                       | Número internacional del asesor, solo dígitos, sin `+`.             |
+| `WHISPER_API_URL`       |       Sí para notas de voz | `http://localhost:8000/v1/audio/transcriptions` | Endpoint local compatible con la API de transcripciones de OpenAI.  |
+| `WHISPER_MODEL`         |                         No | `Systran/faster-whisper-small`                  | Nombre de modelo cargado por el servidor Whisper local.             |
+| `WHISPER_API_KEY`       |                         No | Sin valor                                       | Token opcional si el servidor local de Whisper exige autenticación. |
+| `OBSERVE_APP_KEY`       |                         No | Marcador `YOUR_APP_KEY`                         | Clave de NestJS Observe.                                            |
+| `OBSERVE_APP_SECRET`    |                         No | Marcador `YOUR_APP_SECRET`                      | Secreto de NestJS Observe.                                          |
 
 `.env` está excluido de Git. No guardes credenciales en el repositorio ni uses un usuario de base de datos con permisos de escritura para esta aplicación.
 
@@ -268,24 +285,47 @@ El asistente normaliza el mensaje, extrae hasta cuatro términos de búsqueda, c
 
 Esta ruta no guarda historial entre solicitudes HTTP. Si Ollama no responde, devuelve HTTP 503.
 
-## Bot de Telegram
+## Canal de WhatsApp
 
-El bot se inicia dentro del ciclo de vida de Nest solo si `TELEGRAM_BOT_TOKEN` está definido. Usa long polling; no requiere configurar un webhook ni exponer una URL pública. El bot maneja mensajes de texto.
+OpenWA debe poder acceder a `POST http://localhost:3000/openwa/webhook`. Si el backend usa otro puerto o host, configura en OpenWA la URL que realmente pueda alcanzar. Crea el webhook para la sesión cuyo ID se haya puesto en `OPENWA_SESSION_ID`, suscrito a `message.received` y `call.received`, y configura como `secret` el mismo valor de `OPENWA_WEBHOOK_SECRET`. OpenWA firma el cuerpo original con `X-OpenWA-Signature: sha256=<hex>`; el backend rechaza firmas ausentes o inválidas.
+
+Usa en `OPENWA_SESSION_ID` el `sessionId` del evento entrante. Si el mensaje llega con un identificador `@lid`, el backend consulta OpenWA para resolverlo a un número antes de enviar la respuesta y, si no hay mapeo disponible, intenta responder al mismo `@lid`. La API puede bloquear URLs de webhook por su política SSRF; si OpenWA rechaza `localhost`, configura una dirección interna alcanzable y permitida por OpenWA, sin desactivar esa protección.
+
+Ejemplo para crear el webhook desde OpenWA (sustituye los marcadores; no guardes la API key en el repositorio):
+
+```bash
+curl -X POST "http://localhost:2785/api/sessions/ID_DE_SESION/webhooks" \
+  -H "X-API-Key: TU_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "{\"url\":\"http://localhost:3000/openwa/webhook\",\"events\":[\"message.received\",\"call.received\"],\"secret\":\"EL_MISMO_OPENWA_WEBHOOK_SECRET\",\"retryCount\":3}"
+```
+
+El backend procesa mensajes de texto y notas de voz individuales; ignora mensajes propios, grupos, estados e imágenes. Las notas de voz se descargan desde OpenWA, se transcriben con un servidor local compatible con OpenAI Whisper y luego pasan por el mismo asistente. Las respuestas se envían a `POST /api/sessions/{sessionId}/messages/send-text` usando `X-API-Key` y una clave de idempotencia derivada del evento recibido. El servidor de transcripción se instala y ejecuta localmente; si no está disponible o el audio supera 20 MB, el cliente recibe un aviso para volver a intentar o escribir su consulta.
+
+Para activar la transcripción con Speaches, inicia Docker Desktop y ejecuta en PowerShell:
+
+```powershell
+docker run --rm --detach --publish 127.0.0.1:8000:8000 --name speaches --volume speaches-model-cache:/home/ubuntu/.cache/huggingface/hub ghcr.io/speaches-ai/speaches:latest-cpu
+```
+
+La primera transcripción descarga el modelo indicado en `WHISPER_MODEL`. Este servicio, basado en Whisper, se ejecuta localmente, separado del backend y de Ollama; no requiere enviar los audios a la nube. Si el servidor no está disponible, el cliente recibe un aviso para volver a intentar o escribir su consulta. Consulta la [guía de instalación de Speaches](https://speaches.ai/installation/) para alternativas con GPU y requisitos adicionales.
+
+OpenWA también debe tener habilitado el evento `call.received`. Se configuró `autoRejectCalls` en OpenWA para rechazar llamadas al instante en las sesiones con motor Baileys; el backend además solicita el rechazo al recibir el evento y tolera que la llamada ya haya sido rechazada. Envía un aviso de WhatsApp a `OPENWA_ADVISOR_PHONE` para que un asesor revise el chat. Esto no transfiere la llamada en vivo. Si el motor activo no permite rechazar llamadas, el aviso al asesor indicará que debe contactar pronto al cliente.
 
 Comandos disponibles:
 
-| Comando | Comportamiento |
-|---|---|
-| `/start` | Mensaje de bienvenida. |
-| `/ayuda` o `/help` | Muestra comandos e información sobre cotizaciones. |
-| `/productos [nombre]` | Busca productos. Sin argumento pregunta qué producto buscar. |
-| `/cotizar [nombre]` | Inicia una cotización guiada; acepta opcionalmente un término de búsqueda. |
-| `/cancelar` | Cancela el flujo activo de búsqueda o cotización. |
+| Comando                 | Comportamiento                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------ |
+| `/start`                | Mensaje de bienvenida.                                                         |
+| `/ayuda` o `/help`      | Muestra comandos e información sobre cotizaciones.                             |
+| `/productos [nombre]`   | Busca productos. Sin argumento pregunta qué producto buscar.                   |
+| `/cotizar [nombre]`     | Inicia una cotización guiada; acepta opcionalmente un término de búsqueda.     |
+| `/cancelar`             | Cancela el flujo activo de búsqueda o cotización.                              |
 | `/reiniciar` o `/reset` | Cancela el flujo y elimina el historial conversacional guardado para ese chat. |
 
 El flujo de cotización pide el producto, presenta hasta 10 productos distintos para elegir mediante su número, solicita una cantidad entera positiva y muestra una cotización en pesos colombianos. El bot informa que la cotización queda pendiente de confirmación y no reserva existencias. También intenta reconocer expresiones de intención de compra y empieza el mismo flujo.
 
-Los mensajes que no sean comandos ni parte de un flujo se envían a `AiService` junto con el historial del chat. El bot conserva hasta 20 mensajes (mensajes de usuario y respuestas del asistente) por chat. Los mensajes de Telegram se procesan en secuencia dentro de cada chat; chats distintos pueden procesarse independientemente. Las selecciones de producto y otros pasos temporales del flujo se guardan en memoria y se pierden cuando se reinicia el proceso.
+Los mensajes que no sean comandos ni parte de un flujo se envían a `AiService` junto con el historial del chat. El bot conserva hasta 20 mensajes (mensajes de usuario y respuestas del asistente) por chat. Los mensajes de WhatsApp se procesan en secuencia dentro de cada chat; chats distintos pueden procesarse independientemente. Las selecciones de producto y otros pasos temporales del flujo se guardan en memoria y se pierden cuando se reinicia el proceso.
 
 ## Base de datos y cotizaciones
 
@@ -300,18 +340,18 @@ El catálogo incluye solo productos activos (`PRODUCTOS.Estado = TRUE`) y lotes 
 
 Los niveles de precio se determinan por la cantidad del mismo producto:
 
-| Unidades | Campo de precio |
-|---:|---|
-| 1–5 | `Precio_venta_1` |
-| 6–11 | `Precio_venta_2` |
-| 12–23 | `Precio_venta_3` |
+| Unidades | Campo de precio  |
+| -------: | ---------------- |
+|      1–5 | `Precio_venta_1` |
+|     6–11 | `Precio_venta_2` |
+|    12–23 | `Precio_venta_3` |
 | 24 o más | `Precio_venta_4` |
 
 El precio por nivel se elige con la cantidad total solicitada, no sumando unidades de productos diferentes. Si la cantidad se abastece con más de un lote, la consulta toma primero los lotes de menor `ID_Lote` y distribuye las unidades disponibles en ese orden. No existe una operación de reserva o creación de pedido.
 
-## Historial de Telegram
+## Historial de WhatsApp
 
-El servicio crea y usa `data/telegram-conversations.json` en el directorio de trabajo actual. El archivo almacena un objeto cuyas claves son IDs de chat y cuyos valores son listas de mensajes:
+El servicio crea y usa `data/whatsapp-conversations.json` en el directorio de trabajo actual. El archivo almacena un objeto cuyas claves son IDs de chat y cuyos valores son listas de mensajes:
 
 ```json
 {
@@ -360,16 +400,17 @@ pnpm run build
 pnpm run start:prod
 ```
 
-En producción, inyecta las variables de entorno en el proceso y asegúrate de que tenga conectividad con PostgreSQL. El proceso también intenta iniciar el bot si se proporciona `TELEGRAM_BOT_TOKEN`. La URL de Ollama está codificada como `localhost`; en contenedores o despliegues separados, ese host debe ser accesible desde el proceso y puede requerir un cambio en `AiService`.
+En producción, inyecta las variables de entorno en el proceso y asegúrate de que tenga conectividad con PostgreSQL y OpenWA. Configura la URL del webhook para que OpenWA alcance el backend; `localhost` solo funciona si ambos procesos comparten el mismo host o red. La URL de Ollama está codificada como `localhost`; en contenedores o despliegues separados, ese host debe ser accesible desde el proceso y puede requerir un cambio en `AiService`.
 
 La aplicación crea `ObserveModule` para observabilidad de NestJS. Para habilitar la cuenta de Observe, configura `OBSERVE_APP_KEY` y `OBSERVE_APP_SECRET`; sin credenciales se usan valores marcadores.
 
 ## Solución de problemas
 
-| Síntoma | Qué revisar |
-|---|---|
-| El servidor no inicia y aparece un error de conexión con PostgreSQL | Comprueba `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, conectividad de red y permisos de lectura. |
-| Telegram no responde, pero la API HTTP está disponible | Revisa que `TELEGRAM_BOT_TOKEN` esté definido y que el token sea válido; revisa los logs del proceso y que la salida de red permita long polling. |
-| `/chat` devuelve 503 | Comprueba que Ollama esté ejecutándose en el mismo host/entorno, que `qwen3.5:4b` esté descargado y que responda en `http://localhost:11434`. |
-| No aparecen productos | Verifica que el esquema use los nombres de tablas/columnas indicados, que los productos y lotes estén activos y que el stock sea mayor que cero. |
-| El proceso no puede cargar el historial de Telegram | Verifica que `data/telegram-conversations.json` contenga JSON válido con un objeto de historiales y mensajes con `role` (`user` o `assistant`) y `content` de tipo texto. |
+| Síntoma                                                             | Qué revisar                                                                                                                                                                  |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| El servidor no inicia y aparece un error de conexión con PostgreSQL | Comprueba `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, conectividad de red y permisos de lectura.                                                              |
+| WhatsApp no responde, pero la API HTTP está disponible              | Revisa `OPENWA_BASE_URL`, `OPENWA_API_KEY`, `OPENWA_SESSION_ID` y `OPENWA_WEBHOOK_SECRET`; confirma que la sesión esté iniciada y que el webhook apunte a `/openwa/webhook`. |
+| OpenWA recibe errores al entregar el webhook                        | Comprueba que OpenWA pueda acceder al backend y que el secreto configurado coincida; el webhook debe enviar el cuerpo original y el header `X-OpenWA-Signature`.             |
+| `/chat` devuelve 503                                                | Comprueba que Ollama esté ejecutándose en el mismo host/entorno, que `qwen3.5:4b` esté descargado y que responda en `http://localhost:11434`.                                |
+| No aparecen productos                                               | Verifica que el esquema use los nombres de tablas/columnas indicados, que los productos y lotes estén activos y que el stock sea mayor que cero.                             |
+| El proceso no puede cargar el historial de WhatsApp                 | Verifica que `data/whatsapp-conversations.json` contenga JSON válido con un objeto de historiales y mensajes con `role` (`user` o `assistant`) y `content` de tipo texto.    |

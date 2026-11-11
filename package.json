@@ -27,7 +27,6 @@
     "@nestjs/core": "^12.0.1",
     "@nestjs/observe": "^0.3.0",
     "@nestjs/platform-express": "^12.0.1",
-    "node-telegram-bot-api": "^2.1.0",
     "pg": "^8.23.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
@@ -39,7 +38,6 @@
     "@nestjs/testing": "^12.0.1",
     "@types/express": "^5.0.0",
     "@types/node": "^24.0.0",
-    "@types/node-telegram-bot-api": "^0.64.15",
     "@types/pg": "^8.23.1",
     "@types/supertest": "^7.0.0",
     "@vitest/coverage-v8": "^4.1.2",
