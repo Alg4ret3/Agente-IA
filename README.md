@@ -1,6 +1,6 @@
-# Distri Magik Agent
+# LadyNail Shop Agent
 
-Backend en NestJS para consultar el catálogo de Distri Magik, preparar cotizaciones y responder consultas de clientes desde una API HTTP y WhatsApp mediante OpenWA. El asistente utiliza un modelo de Ollama y solo debe presentar como información comercial aquello que obtiene del catálogo de PostgreSQL.
+Backend en NestJS para consultar el catálogo de LadyNail Shop, preparar cotizaciones y responder consultas de clientes desde una API HTTP y WhatsApp mediante OpenWA. El asistente utiliza un modelo de Ollama y solo debe presentar como información comercial aquello que obtiene del catálogo de PostgreSQL.
 
 ## Contenido
 
@@ -25,7 +25,7 @@ La aplicación ofrece tres operaciones HTTP:
 2. Cotizar un producto para una cantidad solicitada.
 3. Enviar una consulta comercial al asistente, que combina el mensaje con resultados del catálogo y los consulta a Ollama.
 
-WhatsApp es el único canal de mensajería: OpenWA entrega los mensajes entrantes al webhook del backend y el backend envía las respuestas por la API de OpenWA. El asistente puede buscar productos, guiar al cliente por una cotización y mantener un contexto conversacional por chat. Las cotizaciones son informativas: no confirman pedidos ni reservan inventario; requieren aprobación de un asesor.
+WhatsApp es el único canal de mensajería: OpenWA entrega los mensajes entrantes al webhook del backend y el backend envía las respuestas por la API de OpenWA. El asistente puede buscar productos, cotizar y armar pedidos que se guardan y envían al asesor para aprobación. Ninguna cotización reserva inventario ni confirma una venta.
 
 ## Tecnologías
 
@@ -42,7 +42,8 @@ WhatsApp es el único canal de mensajería: OpenWA entrega los mensajes entrante
 ```text
 .
 ├── data/
-│   └── whatsapp-conversations.json   # Historial local creado en ejecución; no versionar
+│   ├── whatsapp-conversations.json   # Historial local; no versionar
+│   └── whatsapp-orders.json          # Pedidos locales; no versionar
 ├── src/
 │   ├── ai/
 │   │   ├── ai.module.ts
@@ -109,6 +110,7 @@ Crea un archivo `.env` en la raíz del proyecto. No se distribuye una plantilla 
 ```dotenv
 # Servidor HTTP
 PORT=3000
+OLLAMA_MODEL=qwen3.5:4b
 
 # PostgreSQL
 DB_HOST=localhost
@@ -123,6 +125,7 @@ OPENWA_API_KEY=
 OPENWA_SESSION_ID=
 OPENWA_WEBHOOK_SECRET=
 OPENWA_ADVISOR_PHONE=
+WHATSAPP_ORDERS_FILE=data/whatsapp-orders.json
 
 # Whisper local (servidor compatible con OpenAI; configurar por separado)
 WHISPER_API_URL=http://localhost:8000/v1/audio/transcriptions
@@ -136,24 +139,26 @@ OBSERVE_APP_SECRET=
 
 Variables y valores predeterminados que usa el código:
 
-| Variable                |                Obligatoria | Valor predeterminado                            | Uso                                                                 |
-| ----------------------- | -------------------------: | ----------------------------------------------- | ------------------------------------------------------------------- |
-| `PORT`                  |                         No | `3000`                                          | Puerto HTTP.                                                        |
-| `DB_HOST`               |                         No | `localhost`                                     | Host PostgreSQL.                                                    |
-| `DB_PORT`               |                         No | `5432`                                          | Puerto PostgreSQL.                                                  |
-| `DB_NAME`               |                         No | `systemdistrimagik`                             | Base de datos.                                                      |
-| `DB_USER`               |                         No | `agente_ia_lectura`                             | Usuario PostgreSQL.                                                 |
-| `DB_PASSWORD`           |         Sí para conectarse | Sin valor                                       | Contraseña del usuario de base de datos.                            |
-| `OPENWA_BASE_URL`       |                         No | `http://localhost:2785`                         | URL base de la API de OpenWA.                                       |
-| `OPENWA_API_KEY`        |           Sí para WhatsApp | Sin valor                                       | API key de OpenWA; se envía en el header `X-API-Key`.               |
-| `OPENWA_SESSION_ID`     |           Sí para WhatsApp | Sin valor                                       | ID de la sesión de OpenWA que recibirá y enviará mensajes.          |
-| `OPENWA_WEBHOOK_SECRET` |           Sí para WhatsApp | Sin valor                                       | Secreto compartido para verificar `X-OpenWA-Signature`.             |
-| `OPENWA_ADVISOR_PHONE`  | Sí para avisos de llamadas | Sin valor                                       | Número internacional del asesor, solo dígitos, sin `+`.             |
-| `WHISPER_API_URL`       |       Sí para notas de voz | `http://localhost:8000/v1/audio/transcriptions` | Endpoint local compatible con la API de transcripciones de OpenAI.  |
-| `WHISPER_MODEL`         |                         No | `Systran/faster-whisper-small`                  | Nombre de modelo cargado por el servidor Whisper local.             |
-| `WHISPER_API_KEY`       |                         No | Sin valor                                       | Token opcional si el servidor local de Whisper exige autenticación. |
-| `OBSERVE_APP_KEY`       |                         No | Marcador `YOUR_APP_KEY`                         | Clave de NestJS Observe.                                            |
-| `OBSERVE_APP_SECRET`    |                         No | Marcador `YOUR_APP_SECRET`                      | Secreto de NestJS Observe.                                          |
+| Variable                |              Obligatoria | Valor predeterminado                            | Uso                                                                 |
+| ----------------------- | -----------------------: | ----------------------------------------------- | ------------------------------------------------------------------- |
+| `PORT`                  |                       No | `3000`                                          | Puerto HTTP.                                                        |
+| `OLLAMA_MODEL`          |                       No | `qwen3.5:4b`                                    | Modelo local usado para respuestas conversacionales.                |
+| `DB_HOST`               |                       No | `localhost`                                     | Host PostgreSQL.                                                    |
+| `DB_PORT`               |                       No | `5432`                                          | Puerto PostgreSQL.                                                  |
+| `DB_NAME`               |                       No | `systemdistrimagik`                             | Base de datos.                                                      |
+| `DB_USER`               |                       No | `agente_ia_lectura`                             | Usuario PostgreSQL.                                                 |
+| `DB_PASSWORD`           |       Sí para conectarse | Sin valor                                       | Contraseña del usuario de base de datos.                            |
+| `OPENWA_BASE_URL`       |                       No | `http://localhost:2785`                         | URL base de la API de OpenWA.                                       |
+| `OPENWA_API_KEY`        |         Sí para WhatsApp | Sin valor                                       | API key de OpenWA; se envía en el header `X-API-Key`.               |
+| `OPENWA_SESSION_ID`     |         Sí para WhatsApp | Sin valor                                       | ID de la sesión de OpenWA que recibirá y enviará mensajes.          |
+| `OPENWA_WEBHOOK_SECRET` |         Sí para WhatsApp | Sin valor                                       | Secreto compartido para verificar `X-OpenWA-Signature`.             |
+| `OPENWA_ADVISOR_PHONE`  | Sí para avisos y pedidos | Sin valor                                       | Número internacional del asesor, solo dígitos, sin `+`.             |
+| `WHATSAPP_ORDERS_FILE`  |                       No | `data/whatsapp-orders.json`                     | Archivo local de pedidos pendientes y su estado.                    |
+| `WHISPER_API_URL`       |     Sí para notas de voz | `http://localhost:8000/v1/audio/transcriptions` | Endpoint local compatible con la API de transcripciones de OpenAI.  |
+| `WHISPER_MODEL`         |                       No | `Systran/faster-whisper-small`                  | Nombre de modelo cargado por el servidor Whisper local.             |
+| `WHISPER_API_KEY`       |                       No | Sin valor                                       | Token opcional si el servidor local de Whisper exige autenticación. |
+| `OBSERVE_APP_KEY`       |                       No | Marcador `YOUR_APP_KEY`                         | Clave de NestJS Observe.                                            |
+| `OBSERVE_APP_SECRET`    |                       No | Marcador `YOUR_APP_SECRET`                      | Secreto de NestJS Observe.                                          |
 
 `.env` está excluido de Git. No guardes credenciales en el repositorio ni uses un usuario de base de datos con permisos de escritura para esta aplicación.
 
@@ -281,7 +286,7 @@ Respuesta:
 }
 ```
 
-El asistente normaliza el mensaje, extrae hasta cuatro términos de búsqueda, consulta el catálogo y limita el contexto a 12 resultados. Si no encuentra coincidencias, consulta el catálogo general. Las instrucciones del modelo indican responder en español, no inventar productos, marcas, precios o existencias y aclarar que los pedidos requieren aprobación.
+El asistente responde saludos comunes sin llamar al modelo, busca hasta tres términos en paralelo y limita el contexto a 12 productos. No envía precios ni existencias al modelo; para precios, pide la cantidad y orienta al cliente a `/cotizar`. Las respuestas de Ollama tienen un máximo configurado de 128 tokens y un tiempo límite de 45 segundos. Si no encuentra coincidencias, no carga el catálogo completo.
 
 Esta ruta no guarda historial entre solicitudes HTTP. Si Ollama no responde, devuelve HTTP 503.
 
@@ -300,7 +305,7 @@ curl -X POST "http://localhost:2785/api/sessions/ID_DE_SESION/webhooks" \
   -d "{\"url\":\"http://localhost:3000/openwa/webhook\",\"events\":[\"message.received\",\"call.received\"],\"secret\":\"EL_MISMO_OPENWA_WEBHOOK_SECRET\",\"retryCount\":3}"
 ```
 
-El backend procesa mensajes de texto y notas de voz individuales; ignora mensajes propios, grupos, estados e imágenes. Las notas de voz se descargan desde OpenWA, se transcriben con un servidor local compatible con OpenAI Whisper y luego pasan por el mismo asistente. Las respuestas se envían a `POST /api/sessions/{sessionId}/messages/send-text` usando `X-API-Key` y una clave de idempotencia derivada del evento recibido. El servidor de transcripción se instala y ejecuta localmente; si no está disponible o el audio supera 20 MB, el cliente recibe un aviso para volver a intentar o escribir su consulta.
+El backend procesa mensajes de texto, notas de voz e imágenes individuales; ignora mensajes propios, grupos y estados. Para mensajes entrantes llama a `POST /api/sessions/{sessionId}/chats/read`, incluyendo el ID específico del mensaje cuando OpenWA lo proporciona, para emitir la confirmación de lectura de WhatsApp. Si la persona tiene desactivadas las confirmaciones de lectura en su privacidad, WhatsApp puede no mostrar los ticks azules. Las notas de voz se descargan desde OpenWA, se transcriben con un servidor local compatible con OpenAI Whisper y luego pasan por el mismo asistente. Las imágenes se reenvían al asesor por WhatsApp con el número del cliente en el texto adjunto; se admiten archivos de hasta 10 MB. Si OpenWA no permite descargar o reenviar la imagen, el asesor recibe un aviso con el número del cliente para revisar el chat original. Las respuestas se envían a `POST /api/sessions/{sessionId}/messages/send-text` usando `X-API-Key` y una clave de idempotencia derivada del evento recibido. El servidor de transcripción se instala y ejecuta localmente; si no está disponible o el audio supera 20 MB, el cliente recibe un aviso para volver a intentar o escribir su consulta.
 
 Para activar la transcripción con Speaches, inicia Docker Desktop y ejecuta en PowerShell:
 
@@ -310,22 +315,29 @@ docker run --rm --detach --publish 127.0.0.1:8000:8000 --name speaches --volume 
 
 La primera transcripción descarga el modelo indicado en `WHISPER_MODEL`. Este servicio, basado en Whisper, se ejecuta localmente, separado del backend y de Ollama; no requiere enviar los audios a la nube. Si el servidor no está disponible, el cliente recibe un aviso para volver a intentar o escribir su consulta. Consulta la [guía de instalación de Speaches](https://speaches.ai/installation/) para alternativas con GPU y requisitos adicionales.
 
-OpenWA también debe tener habilitado el evento `call.received`. Se configuró `autoRejectCalls` en OpenWA para rechazar llamadas al instante en las sesiones con motor Baileys; el backend además solicita el rechazo al recibir el evento y tolera que la llamada ya haya sido rechazada. Envía un aviso de WhatsApp a `OPENWA_ADVISOR_PHONE` para que un asesor revise el chat. Esto no transfiere la llamada en vivo. Si el motor activo no permite rechazar llamadas, el aviso al asesor indicará que debe contactar pronto al cliente.
+OpenWA también debe tener habilitado el evento `call.received`. La opción `autoRejectCalls` y el endpoint de rechazo de llamadas solo funcionan con el motor Baileys; `whatsapp-web.js` no permite rechazar llamadas. El backend solicita el rechazo al recibir el evento y envía un aviso al asesor mediante `OPENWA_ADVISOR_PHONE`. Para incluir el número real, consulta la ficha del contacto de OpenWA cuando el evento trae un ID `@lid`. Si el motor activo no permite rechazar llamadas, el aviso lo indica explícitamente y pide contactar pronto al cliente. Esto no transfiere la llamada en vivo.
 
 Comandos disponibles:
 
-| Comando                 | Comportamiento                                                                 |
-| ----------------------- | ------------------------------------------------------------------------------ |
-| `/start`                | Mensaje de bienvenida.                                                         |
-| `/ayuda` o `/help`      | Muestra comandos e información sobre cotizaciones.                             |
-| `/productos [nombre]`   | Busca productos. Sin argumento pregunta qué producto buscar.                   |
-| `/cotizar [nombre]`     | Inicia una cotización guiada; acepta opcionalmente un término de búsqueda.     |
-| `/cancelar`             | Cancela el flujo activo de búsqueda o cotización.                              |
-| `/reiniciar` o `/reset` | Cancela el flujo y elimina el historial conversacional guardado para ese chat. |
+| Comando                       | Comportamiento                                                                    |
+| ----------------------------- | --------------------------------------------------------------------------------- |
+| `/start`                      | Mensaje de bienvenida.                                                            |
+| `/ayuda` o `/help`            | Muestra comandos e información sobre cotizaciones.                                |
+| `/productos [nombre]`         | Busca productos. Sin argumento pregunta qué producto buscar.                      |
+| `/cotizar [nombre]`           | Inicia una cotización guiada; acepta opcionalmente un término de búsqueda.        |
+| `/pedido`                     | Busca productos, recopila cantidades y datos del cliente y solicita confirmación. |
+| `/pedido aprobar [código]`    | Aprueba un pedido (solo asesor).                                                  |
+| `/pedido cambios [código]`    | Marca que se requieren cambios (solo asesor).                                     |
+| `/pedido reintentar [código]` | Reintenta la entrega pendiente de un pedido (solo cliente titular).               |
+| `/pedido estado [código]`     | Consulta el estado (solo cliente titular o asesor).                               |
+| `/cancelar`                   | Cancela el flujo activo de búsqueda, cotización o pedido.                         |
+| `/reiniciar` o `/reset`       | Cancela el flujo y elimina el historial conversacional guardado para ese chat.    |
 
-El flujo de cotización pide el producto, presenta hasta 10 productos distintos para elegir mediante su número, solicita una cantidad entera positiva y muestra una cotización en pesos colombianos. El bot informa que la cotización queda pendiente de confirmación y no reserva existencias. También intenta reconocer expresiones de intención de compra y empieza el mismo flujo.
+El flujo de cotización pide el producto, presenta hasta 10 productos distintos para elegir mediante su número, solicita una cantidad entera positiva y muestra una cotización en pesos colombianos. El flujo `/pedido` admite varios productos y valida cantidades, nombre, celular, dirección y cédula opcional; calcula los totales desde PostgreSQL y vuelve a cotizar antes de aceptar la confirmación final. Luego guarda el pedido localmente y lo envía al asesor con un código. El cliente recibe un aviso de que todavía requiere aprobación; el asesor puede aprobarlo o marcar cambios con los comandos anteriores. También intenta reconocer expresiones de intención de compra y empieza el flujo de pedido.
 
-Los mensajes que no sean comandos ni parte de un flujo se envían a `AiService` junto con el historial del chat. El bot conserva hasta 20 mensajes (mensajes de usuario y respuestas del asistente) por chat. Los mensajes de WhatsApp se procesan en secuencia dentro de cada chat; chats distintos pueden procesarse independientemente. Las selecciones de producto y otros pasos temporales del flujo se guardan en memoria y se pierden cuando se reinicia el proceso.
+Los carritos entrantes se detectan en eventos `message.received` u `order.received` cuando OpenWA entrega `productItems` o `products` con nombre y cantidad, directamente o dentro de `orderMessage`. Cada nombre debe coincidir exactamente con un único producto del catálogo y cada cantidad se vuelve a cotizar; se ignoran los precios y totales del mensaje de WhatsApp. Si algún producto no coincide, está ambiguo o no está disponible, el bot no crea pedido y pide usar `/pedido` o contactar al asesor. Los carritos válidos requieren una confirmación para iniciar el flujo de captura de datos y otra confirmación final antes de guardarse y enviarse al asesor.
+
+Los mensajes que no sean comandos ni parte de un flujo se envían a `AiService` junto con hasta ocho mensajes recientes del historial. Los mensajes de WhatsApp se procesan en secuencia dentro de cada chat; chats distintos pueden procesarse independientemente. Los borradores de conversación se guardan en memoria y se pierden al reiniciar el proceso. Los pedidos confirmados se conservan en `WHATSAPP_ORDERS_FILE`; este archivo contiene datos personales, está excluido de Git y debe protegerse con permisos del sistema operativo y copias seguras. El almacenamiento es local a una instancia y no sincroniza pedidos entre varias réplicas.
 
 ## Base de datos y cotizaciones
 
@@ -336,7 +348,7 @@ No hay migraciones ni creación automática del esquema en este repositorio. La 
 - `public."MARCAS"`: `"ID_Marca"`, `"Nombre"`.
 - `public."CATEGORIAS"`: `"ID_Categoria"`, `"Nombre"`.
 
-El catálogo incluye solo productos activos (`PRODUCTOS.Estado = TRUE`) y lotes activos con stock positivo. Marca y categoría son opcionales. La aplicación ejecuta consultas de lectura y establece `default_transaction_read_only` durante la inicialización de la conexión; aun así, configura `DB_USER` con permisos explícitos de solo lectura y limita sus permisos a las tablas necesarias.
+El catálogo incluye solo productos activos (`PRODUCTOS.Estado = TRUE`) y lotes activos con stock positivo. Marca y categoría son opcionales. La aplicación ejecuta consultas de lectura y establece `default_transaction_read_only` durante la inicialización de la conexión; aun así, configura `DB_USER` con permisos explícitos de solo lectura y limita sus permisos a las tablas necesarias. Los pedidos se guardan en el archivo local configurado en `WHATSAPP_ORDERS_FILE`, por lo que la aplicación no necesita permisos de escritura en PostgreSQL.
 
 Los niveles de precio se determinan por la cantidad del mismo producto:
 
